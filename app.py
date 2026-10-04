@@ -1,10 +1,19 @@
 import sqlite3
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
 
 def connect_to_db():
     conn = sqlite3.connect('database.db')
     return conn
 
+
 def create_db_table():
+    conn = None
+
     try:
         conn = connect_to_db()
         conn.execute('''
@@ -22,13 +31,18 @@ def create_db_table():
     except:
         print("User table creation failed - Maybe table")
     finally:
-        conn.close()
+        if conn:
+            conn.close()
+
 
 def insert_user(user):
     inserted_user = {}
+    conn = None
+
     try:
         conn = connect_to_db()
         cur = conn.cursor()
+
         cur.execute(
             "INSERT INTO users (name, email, phone, address, country) VALUES (?, ?, ?, ?, ?)",
             (
@@ -39,14 +53,20 @@ def insert_user(user):
                 user["country"]
             )
         )
+
         conn.commit()
         inserted_user = get_user_by_id(cur.lastrowid)
+
     except:
-        conn.rollback()
+        if conn:
+            conn.rollback()
+
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
     return inserted_user
+
 
 def get_users():
     users = []
@@ -66,11 +86,16 @@ def get_users():
             user["phone"] = i["phone"]
             user["address"] = i["address"]
             user["country"] = i["country"]
+
             users.append(user)
+
+        conn.close()
+
     except:
         users = []
 
     return users
+
 
 def get_user_by_id(user_id):
     user = {}
@@ -79,10 +104,12 @@ def get_user_by_id(user_id):
         conn = connect_to_db()
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
+
         cur.execute(
             "SELECT * FROM users WHERE user_id = ?",
             (user_id,)
         )
+
         row = cur.fetchone()
 
         user["user_id"] = row["user_id"]
@@ -91,17 +118,23 @@ def get_user_by_id(user_id):
         user["phone"] = row["phone"]
         user["address"] = row["address"]
         user["country"] = row["country"]
+
+        conn.close()
+
     except:
         user = {}
 
     return user
 
+
 def update_user(user):
     updated_user = {}
+    conn = None
 
     try:
         conn = connect_to_db()
         cur = conn.cursor()
+
         cur.execute(
             "UPDATE users SET name = ?, email = ?, phone = ?, address = ?, country = ? WHERE user_id = ?",
             (
@@ -113,33 +146,78 @@ def update_user(user):
                 user["user_id"]
             )
         )
+
         conn.commit()
         updated_user = get_user_by_id(user["user_id"])
+
     except:
-        conn.rollback()
+        if conn:
+            conn.rollback()
+
         updated_user = {}
+
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
     return updated_user
 
+
 def delete_user(user_id):
     message = {}
+    conn = None
 
     try:
         conn = connect_to_db()
+
         conn.execute(
             "DELETE FROM users WHERE user_id = ?",
             (user_id,)
         )
+
         conn.commit()
         message["status"] = "User deleted successfully"
+
     except:
-        conn.rollback()
+        if conn:
+            conn.rollback()
+
         message["status"] = "Cannot delete user"
+
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
     return message
 
-create_db_table()
+
+@app.route('/api/users', methods=['GET'])
+def api_get_users():
+    return jsonify(get_users())
+
+
+@app.route('/api/users/<user_id>', methods=['GET'])
+def api_get_user(user_id):
+    return jsonify(get_user_by_id(user_id))
+
+
+@app.route('/api/users/add', methods=['POST'])
+def api_add_user():
+    user = request.get_json()
+    return jsonify(insert_user(user))
+
+
+@app.route('/api/users/update', methods=['PUT'])
+def api_update_user():
+    user = request.get_json()
+    return jsonify(update_user(user))
+
+
+@app.route('/api/users/delete/<user_id>', methods=['DELETE'])
+def api_delete_user(user_id):
+    return jsonify(delete_user(user_id))
+
+
+if __name__ == "__main__":
+    create_db_table()
+    app.run()
